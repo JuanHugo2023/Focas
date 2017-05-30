@@ -1,0 +1,9 @@
+keras
+tensorflow
+h5py
+pillow
+pandas
+blist
+matplotlib
+cython
+jupyter
