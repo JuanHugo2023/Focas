@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
 
 from point_density import point_density
 
@@ -9,7 +10,8 @@ from point_density import point_density
 class Engine(object):
     def __init__(self,
                  data_dir='./data',
-                 img_shape=(3744, 5632),
+                 #img_shape=(3744, 5632),
+                 img_shape=(3328, 4992),
                  sigma=10):
         self.data_dir = data_dir
         self.points = pd.read_csv(self.data_path('coords-clean.csv'))
@@ -72,3 +74,23 @@ class Engine(object):
         sigma = self.sigma / scale
         density = point_density(points, sigma, shape)
         return density
+
+    def display_locations(self, tid, cls=None, window_size=40):
+        coords = self.training_points(tid, cls)
+        if cls == None:
+            coords = coords[:, 1:3]
+        img = self.training_image(tid)
+
+        mask = np.zeros((self.img_shape[0], self.img_shape[1], 3), dtype='bool')
+        for ind in range(len(coords)):
+            row_min = max(coords[ind][0] - window_size, 0)
+            row_max = min(coords[ind][0] + window_size, self.img_shape[0])
+            col_min = max(coords[ind][1] - window_size, 0)
+            col_max = min(coords[ind][1] + window_size, self.img_shape[1])
+            mask[row_min:row_max, col_min:col_max, :] = True
+
+        plt.imshow(mask * img)
+        plt.show()
+        
+            
+        
