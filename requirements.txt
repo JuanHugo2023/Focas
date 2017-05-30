@@ -1,9 +1,8 @@
-keras
-tensorflow
-h5py
-pillow
+# keras
+# tensorflow
+# h5py
+# pillow
 pandas
-blist
 matplotlib
-cython
+# cython
 jupyter
