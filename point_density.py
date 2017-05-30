@@ -1,9 +1,15 @@
 import numpy as np
 
 
+def downsample_sum(a, scale):
+    new_shape = (a.shape[0] // scale, scale, a.shape[1] // scale, scale) + a.shape[2:]
+    a = a.reshape(new_shape)
+    return a.sum(axis=(1, 3))
+
+
 def gauss1d(mu, sigma, truncate, i_min, i_max):
     sigma = float(sigma)
-    lw = int(sigma * truncate + 0.5)
+    lw = int(sigma * truncate) + 1
     sd = sigma * sigma
     i = int(mu + 0.5)
     i0 = max(i_min, i-lw)

@@ -1,7 +1,7 @@
 # keras
 # tensorflow
 # h5py
-# pillow
+pillow
 pandas
 matplotlib
 # cython
