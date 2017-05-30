@@ -87,10 +87,6 @@ class Engine(object):
                              for cls in self.classes],
                             axis=-1)
         points = self.training_points(tid, cls)
-        # h, w = self.img_shape
-        # shape = h // scale, w // scale
-        # points = points / scale
-        # sigma = self.sigma / scale
         density = point_density(points, self.sigma, self.img_shape)
         return downsample_sum(density, scale)
 
