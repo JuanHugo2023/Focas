@@ -59,6 +59,19 @@ class Engine(object):
             return img
         return None
 
+    def training_masked_image(self, tid):
+        img = self.training_image(tid)
+        dotted = self.training_image(tid, 'Dotted')
+        if img is None:
+            return None
+        if dotted is not None:
+            dotted_lum = dotted.sum(axis=2)
+            img *= (dotted_lum > 10)[:, :, None]
+        return img
+
+    def training_ids(self):
+        return np.squeeze(self.counts.as_matrix(['train_id']))
+
     def training_points(self, tid, cls=None):
         def transform_points(points):
             img_path = self.training_image_path(tid)
@@ -87,10 +100,6 @@ class Engine(object):
                              for cls in self.classes],
                             axis=-1)
         points = self.training_points(tid, cls)
-        # h, w = self.img_shape
-        # shape = h // scale, w // scale
-        # points = points / scale
-        # sigma = self.sigma / scale
         density = point_density(points, self.sigma, self.img_shape)
         return downsample_sum(density, scale)
 
