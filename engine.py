@@ -111,3 +111,39 @@ class Engine(object):
 
         plt.imshow(mask * img)
         plt.show()
+
+    def extract_pictures(self, num_pictures=100, window_size=25):
+        #this extracts num_pictures different pictures of sea lions in square images of radius window_size
+        #and saves them to their respective folders
+        assert num_pictures >= 1
+        assert window_size >= 1
+        for sealion_type in self.class_names:
+            if (os.path.isdir('{}/{}'.format(self.data_dir, sealion_type)) == False):
+                os.mkdir('{}/{}'.format(self.data_dir, sealion_type))
+
+        class_counter = np.zeros(len(self.class_names), dtype='int')
+        
+        #iterate through all the files in the Training directory
+        #and extract the pictures of the sea lions.
+        for filename in os.listdir('{}/Train'.format(self.data_dir)):
+                if filename.endswith('.jpg') or filename.endswith('.png'):
+                    tid = int(filename[:len(filename)-4])
+                    coords = self.training_points(tid)
+                    img = self.training_image(tid)
+                    maxrow = self.img_shape[0] - window_size - 1
+                    maxcol = self.img_shape[1] - window_size - 1
+                    for c in coords:
+                        if ((window_size <= c[1] <= maxrow) and (window_size <= c[2] <= maxcol)):
+                            crop = img[c[1] - window_size: c[1]+window_size, c[2]-window_size: c[2]+window_size, :]
+                            class_counter[c[0]] += 1
+                            mpimg.imsave('{}/{}/{}.jpg'.format(self.data_dir, self.class_names[c[0]], str(class_counter[c[0]])), crop)
+                        if (class_counter.sum() >= num_pictures):
+                            break
+                if (class_counter.sum() >= num_pictures):
+                    break
+                
+
+
+                
+        
+        
