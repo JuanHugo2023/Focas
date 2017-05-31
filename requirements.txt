@@ -1,6 +1,10 @@
 # keras
-# tensorflow
 # h5py
+
+tensorflow
+opencv-python
+tkinter
+
 pillow
 pandas
 matplotlib
