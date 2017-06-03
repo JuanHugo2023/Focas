@@ -9,6 +9,7 @@ class Rect(object):
         self.transposed = transposed
 
     def transform(self, points):
+        points = points.copy()
         row, col = points[:, 0], points[:, 1]
         if self.transposed:
             row, col = col, row

@@ -7,25 +7,32 @@ def downsample_sum(a, scale):
     return a.sum(axis=(1, 3))
 
 
-def gauss1d(mu, sigma, truncate, i_min, i_max):
-    sigma = float(sigma)
+def gauss1d(sigma, truncate=4.0):
     lw = int(sigma * truncate) + 1
     sd = sigma * sigma
-    i = int(mu + 0.5)
-    i0 = max(i_min, i-lw)
-    i1 = min(i_max-1, i+lw)
-    x = np.linspace(i0-mu, i1-mu, i1-i0+1)
+    x = np.linspace(-lw, lw, 2*lw + 1)
     g = np.exp(-0.5 * x * x / sd)
     g /= g.sum()
-    return g, i0, i1+1
+    return g
 
 
-def point_density(points, sigma, shape, truncate=4.0):
-    m, n = shape
+def gauss2d(sigma, truncate=4.0):
+    g = gauss1d(sigma, truncate)
+    return np.outer(g, g)
+
+
+def point_density(points, shape, filter):
+    h, w = shape
     a = np.zeros(shape)
+    fh, fw = filter.shape
     for y, x in points:
-        gy, r0, r1 = gauss1d(y, sigma, truncate, 0, m)
-        gx, c0, c1 = gauss1d(x, sigma, truncate, 0, n)
-        g = np.outer(gy, gx)
-        a[r0:r1, c0:c1] += g
+        y0 = np.clip(y - fh // 2, 0, h-1)
+        y1 = np.clip(y + fh // 2, 0, h-1)
+        x0 = np.clip(x - fw // 2, 0, w-1)
+        x1 = np.clip(x + fw // 2, 0, w-1)
+        fy0 = y0 - y + fh // 2
+        fy1 = y1 - y + fh // 2
+        fx0 = x0 - x + fw // 2
+        fx1 = x1 - x + fw // 2
+        a[y0:y1, x0:x1] += filter[fy0:fy1, fx0:fx1]
     return a

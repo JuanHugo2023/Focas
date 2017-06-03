@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from multiprocessing import Pool
 
-from point_density import point_density, downsample_sum
+from point_density import point_density, downsample_sum, gauss2d
 from rect import Rect
 
 
@@ -14,7 +14,7 @@ class Engine(object):
     def __init__(self,
                  data_dir='./data',
                  padded_shape=None,
-                 sigma=10):
+                 sigma=40):
         self.data_dir = data_dir
         self.points = pd.read_csv(self.data_path('coords-clean.csv'))
         self.counts = pd.read_csv(self.data_path('train-clean.csv'))
@@ -28,6 +28,7 @@ class Engine(object):
                                       self.classes))
         self.padded_shape = padded_shape
         self.sigma = sigma
+        self.point_filter = gauss2d(sigma)
         self._training_mmap_images = None
 
     def data_path(self, path):
@@ -157,15 +158,15 @@ class Engine(object):
         col_max = col_min + w
         return Rect(row_min, row_max, col_min, col_max, transposed)
 
-    def training_points(self, tid, cls=None, rect=None):
+    def training_points(self, tid, cls=None, rect=None, expand=0):
         if rect is None:
             rect = self.training_padded_rect(tid)
 
         points_in_rect = (self.points.tid == tid) & \
-                         (rect.row_min <= self.points.row) & \
-                         (self.points.row < rect.row_max) & \
-                         (rect.col_min <= self.points.col) & \
-                         (self.points.col < rect.col_max)
+                         (rect.row_min <= self.points.row + expand) & \
+                         (self.points.row < rect.row_max + expand) & \
+                         (rect.col_min <= self.points.col + expand) & \
+                         (self.points.col < rect.col_max + expand)
 
         if cls is not None:
             points = self.points[(self.points.cls == cls) &
@@ -178,17 +179,28 @@ class Engine(object):
             points[:, 1:] = rect.transform(points[:, 1:])
             return points
 
-    def training_density(self, tid, cls=None, scale=32, rect=None):
+    def training_density(self, tid, cls=None, rect=None, scale=1, subsample=1):
+        self.sigma = 32
         if rect is None:
             rect = self.training_padded_rect(tid)
         if cls is None:
-            return np.stack([self.training_density(tid, cls, scale, rect)
+            return np.stack([self.training_density(tid, cls, rect=rect,
+                                                   scale=scale,
+                                                   subsample=subsample)
                              for cls in self.classes],
                             axis=-1)
-        points = self.training_points(tid, cls, rect)
-        density = point_density(points, self.sigma,
-                                rect.shape())
-        return downsample_sum(density, scale)
+        points = self.training_points(tid, cls,
+                                      rect=rect,
+                                      expand=self.sigma * 4)
+        height, width = rect.shape()
+        if subsample != 1:
+            points *= subsample
+            height *= subsample
+            width *= subsample
+        density = point_density(points, (height, width), self.point_filter)
+        if scale != 1:
+            density = downsample_sum(density, scale)
+        return density
 
     def display_locations(self, tid, cls=None, window_size=40):
         coords = self.training_points(tid, cls)

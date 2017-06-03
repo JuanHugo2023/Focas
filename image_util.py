@@ -3,11 +3,13 @@ import numpy as np
 from rect import Rect
 
 
-def subimage(img, rect):
+def subimage(img, rect, dtype=None):
+    if dtype is None:
+        dtype = img.dtype
     r0, r1, c0, c1 = rect
     r0_, r1_, c0_, c1_ = 0, r1-r0, 0, c1-c0
     h, w, n = img.shape
-    subimage = np.zeros((r1_, c1_, n), dtype=img.dtype)
+    subimage = np.zeros((r1_, c1_, n), dtype=dtype)
 
     def constrain(r, r_, h):
         if r < 0:
