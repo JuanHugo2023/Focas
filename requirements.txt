@@ -1,9 +1,10 @@
 # keras
 # h5py
 
-tensorflow
+# tensorflow
+# tensorflow-gpu
 opencv-python
-tkinter
+pathos
 
 pillow
 pandas
