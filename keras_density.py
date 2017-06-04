@@ -4,8 +4,9 @@ from keras.layers.convolutional import Conv2D
 from keras.layers.normalization import BatchNormalization
 from keras.layers import Activation, Lambda
 from keras.optimizers import RMSprop
-from keras.losses import mean_squared_error
-from keras.callbacks import ModelCheckpoint
+from keras.losses import mean_squared_error, poisson
+from keras.callbacks import ModelCheckpoint, TensorBoard
+from keras import backend as K
 
 import numpy as np
 
@@ -29,18 +30,26 @@ def build_model():
                                    input_shape=input_shape,
                                    pooling=None)
 
-    # output from pre-trained model. shape=(?,10,10,2048)
+    # output from pre-trained model. shape=(?,11,11,2048)
     x = base_model.output
 
-    # add some top layers.
-    for n in [256, 5]:
+    # ignore the cells closest to the border, shape=(?,9,9,2048)
+    x = Lambda(lambda y: y[:, 1:-1, 1:-1, :])(x)
+
+    # add some hidden layers
+    for n in [1024, 256]:
         # 1x1 convolution, so assuming we don't need any more information from
         # the neighbouring regions.
         x = Conv2D(n, (1, 1), padding='same', use_bias=False,
                    name='block15_conv{}'.format(n))(x)
         x = BatchNormalization(name='block15_conv{}_bn'.format(n))(x)
         x = Activation('relu', name='block15_conv{}_act'.format(n))(x)
-    x = Lambda(lambda y: y[:, 1:-1, 1:-1, :])(x)
+
+    # final convolution, down to 5 channels (one per kind of sea lion)
+    x = Conv2D(5, (1, 1), padding='same', use_bias=False,
+               name='block15_conv5')(x)
+    # softplus ensures our count is not negative, while keeping gradient information 
+    x = Activation('softplus', name='block15_conv5_act')(x)
 
     # disable training for the old layers
     for layer in base_model.layers:
@@ -109,15 +118,26 @@ def generate_batches(batch_size):
         densities = np.stack(densities)
         yield (images, densities)
 
+def count_error(density_true, density_pred):
+    count_true = K.sum(density_true, [1, 2])
+    count_pred = K.sum(density_pred, [1, 2])
+    diff = count_true - count_pred
+    rse = K.sqrt(K.sum(diff ** 2, 1))
+    return K.max(rse)
+
 def train_top(model, batch_size):
-    model.compile(optimizer=RMSprop(), loss=mean_squared_error)
+    model.compile(optimizer=RMSprop(),
+                  loss=poisson,
+                  metrics=[count_error])
+    epochs=100
     num_images = len(engine.training_ids())
     subimages_per_image = (5616 * 3744) / (input_shape[0] * input_shape[1])
     steps_per_epoch = int(num_images * subimages_per_image / batch_size)
     print("steps_per_epoch={}".format(steps_per_epoch))
     callbacks = [
-        ModelCheckpoint('keras_density/weights.{epoch:02d}-{val_loss:.2f}.hdf5',
-                        save_weights_only=True)
+        ModelCheckpoint('keras_density/weights.{epoch:02d}.hdf5'),
+        TensorBoard(log_dir='./keras_density/logs/',
+                    histogram_freq=1)
     ]
     model.fit_generator(generate_batches(batch_size),
                         steps_per_epoch=steps_per_epoch,
