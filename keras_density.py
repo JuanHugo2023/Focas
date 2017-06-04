@@ -1,5 +1,5 @@
 from keras.applications import xception
-from keras.models import Model
+from keras.models import Model, load_model
 from keras.layers.convolutional import Conv2D
 from keras.layers.normalization import BatchNormalization
 from keras.layers import Activation, Lambda
@@ -56,6 +56,7 @@ def build_model():
         layer.trainable = False
 
     model = Model(inputs=base_model.input, outputs=x)
+    model
     return model
 
 
@@ -118,6 +119,7 @@ def generate_batches(batch_size):
         densities = np.stack(densities)
         yield (images, densities)
 
+
 def count_error(density_true, density_pred):
     count_true = K.sum(density_true, [1, 2])
     count_pred = K.sum(density_pred, [1, 2])
@@ -125,11 +127,14 @@ def count_error(density_true, density_pred):
     rse = K.sqrt(K.sum(diff ** 2, 1))
     return K.max(rse)
 
-def train_top(model, batch_size):
-    model.compile(optimizer=RMSprop(),
+
+def train_top(model, batch_size, initial_epoch=0, optimizer=None):
+    if optimizer is None:
+        optimizer = RMSprop()
+    model.compile(optimizer=optimizer,
                   loss=poisson,
                   metrics=[count_error])
-    epochs=100
+    epochs = 1000
     num_images = len(engine.training_ids())
     subimages_per_image = (5616 * 3744) / (input_shape[0] * input_shape[1])
     steps_per_epoch = int(num_images * subimages_per_image / batch_size)
@@ -140,10 +145,13 @@ def train_top(model, batch_size):
                     histogram_freq=1)
     ]
     model.fit_generator(generate_batches(batch_size),
+                        epochs=epochs,
                         steps_per_epoch=steps_per_epoch,
                         pickle_safe=True,
-                        callbacks=callbacks)
+                        callbacks=callbacks,
+                        initial_epoch=initial_epoch)
 
 if __name__ == '__main__':
-    model = build_model()
+    # model = build_model()
+    model = load_model('keras_density.hdf5')
     train_top(model, 128)
