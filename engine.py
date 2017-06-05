@@ -76,6 +76,21 @@ class Engine(object):
             np.save(npy_path, mask)
         return np.load(npy_path, mmap_mode='r')
 
+    # def training_mmap_density(self, tid, subsample=1):
+    #     scale = 4
+    #     im_path = self.training_image_path(tid)
+    #     npy_path = os.path.splitext(im_path)[0] + '.density.npy'
+    #     if not os.path.isfile(npy_path):
+    #         density = self.training_density(tid, scale=scale)
+    #         np.save(npy_path, density)
+    #     density = np.load(npy_path, mmap_mode='r')
+    #     h, w, c = density.shape
+    #     subsample *= scale
+    #     density = np.stack([density]*subsample, axis=2)
+    #     density = np.stack([density]*subsample, axis=1)
+    #     density = density.reshape((h*subsample, w*subsample, c))
+    #     return density
+
     def training_image_path(self, tid, dotted=False):
         mode = 'Dotted' if dotted else ''
         for ext in ['npy', 'jpg', 'png']:
@@ -134,9 +149,12 @@ class Engine(object):
         if self.padded_shape is not None:
             return self.padded_shape
         img_path = self.training_image_path(tid)
-        with Image.open(img_path) as img:
-            width, height = img.size
-            return height, width
+        if os.path.splitext(img_path)[1] == '.npy':
+            return self.training_mmap_image(tid).shape[:2]
+        else:
+            with Image.open(img_path) as img:
+                width, height = img.size
+                return height, width
 
     def training_ids(self):
         return np.squeeze(self.counts.as_matrix(['train_id']))

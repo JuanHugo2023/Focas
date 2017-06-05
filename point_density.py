@@ -23,7 +23,7 @@ def gauss2d(sigma, truncate=4.0):
 
 def point_density(points, shape, filter):
     h, w = shape
-    a = np.zeros(shape)
+    a = np.zeros(shape, dtype=np.float32)
     fh, fw = filter.shape
     for y, x in points:
         y0 = np.clip(y - fh // 2, 0, h-1)
