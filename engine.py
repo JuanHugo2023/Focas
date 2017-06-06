@@ -14,10 +14,10 @@ class Engine(object):
     def __init__(self,
                  data_dir='./data',
                  padded_shape=None,
-                 sigma=40):
+                 sigma=(40, 30, 30, 30, 10)):
         self.data_dir = data_dir
         self.points = pd.read_csv(self.data_path('coords-clean.csv'))
-        self.counts = pd.read_csv(self.data_path('train-clean.csv'))
+        self.counts = pd.read_csv(self.data_path('train-clean.csv'), index_col=0)
         self.class_names = ['adult_males',     # 0
                             'subadult_males',  # 1
                             'adult_females',   # 2
@@ -27,8 +27,11 @@ class Engine(object):
         self.class_by_name = dict(zip(self.class_names,
                                       self.classes))
         self.padded_shape = padded_shape
-        self.sigma = sigma
-        self.point_filter = gauss2d(sigma)
+        try:
+            self.sigma = tuple(sigma)
+        except:
+            self.sigma = (sigma,) * 5
+        self.point_filter = tuple(gauss2d(s) for s in self.sigma)
         self._training_mmap_images = None
 
     def data_path(self, path):
@@ -157,7 +160,7 @@ class Engine(object):
                 return height, width
 
     def training_ids(self):
-        return np.squeeze(self.counts.as_matrix(['train_id']))
+        return np.array(self.counts.index)
 
     def training_padded_rect(self, tid):
         h, w = self.training_image_shape(tid)
@@ -198,7 +201,6 @@ class Engine(object):
             return points
 
     def training_density(self, tid, cls=None, rect=None, scale=1, subsample=1):
-        self.sigma = 32
         if rect is None:
             rect = self.training_padded_rect(tid)
         if cls is None:
@@ -209,13 +211,13 @@ class Engine(object):
                             axis=-1)
         points = self.training_points(tid, cls,
                                       rect=rect,
-                                      expand=self.sigma * 4)
+                                      expand=self.sigma[cls] * 4)
         height, width = rect.shape()
         if subsample != 1:
             points *= subsample
             height *= subsample
             width *= subsample
-        density = point_density(points, (height, width), self.point_filter)
+        density = point_density(points, (height, width), self.point_filter[cls])
         if scale != 1:
             density = downsample_sum(density, scale)
         return density

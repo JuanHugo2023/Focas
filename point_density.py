@@ -18,7 +18,8 @@ def gauss1d(sigma, truncate=4.0):
 
 def gauss2d(sigma, truncate=4.0):
     g = gauss1d(sigma, truncate)
-    return np.outer(g, g)
+    g = np.outer(g, g)
+    return g
 
 
 def point_density(points, shape, filter):

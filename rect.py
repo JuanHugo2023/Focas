@@ -45,3 +45,14 @@ class Rect(object):
     def __iter__(self):
         return (self.row_min, self.row_max,
                 self.col_min, self.col_max).__iter__()
+
+    def __repr__(self):
+        if self.transposed:
+            transposed_str = ", True"
+        else:
+            transposed_str = ""
+        return "Rect({}, {}, {}, {}{})".format(self.row_min,
+                                               self.row_max,
+                                               self.col_min,
+                                               self.col_max,
+                                               transposed_str)
