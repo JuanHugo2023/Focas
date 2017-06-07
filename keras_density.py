@@ -9,6 +9,7 @@ from keras.callbacks import ModelCheckpoint, TensorBoard, ReduceLROnPlateau
 from keras import backend as K
 
 import numpy as np
+import pandas as pd
 import os
 import itertools
 
@@ -324,6 +325,20 @@ def training_scores(model):
         print("cumm score:", np.mean(np.sqrt(avg_so_far)))
         print("")
     return training_ids, diff
+
+def predict_test_images(model, results_path):
+    test_counts = engine.test_counts(results_path)
+    test_ids = engine.test_ids()
+    for (i, test_id) in enumerate(test_ids):
+        if test_id in test_counts.index:
+            continue
+        print("test image {} ({}/{})".format(test_id, i, len(test_ids)))
+        img = engine.test_image(test_id)
+        density_pred = predict_large_image(model, img)
+        test_counts.loc[test_id] = density_pred.sum(axis=(0, 1))
+        test_counts.loc[test_counts.index == test_id, :].to_csv(results_path,
+                                                                mode='a',
+                                                                header=False)
 
 # def predict_test_images()
 

@@ -229,6 +229,31 @@ class Engine(object):
             density = downsample_sum(density, scale)
         return density
 
+    def test_image_path(self, test_id):
+        im_path = '{}/Test/{}.jpg'.format(self.data_dir, test_id)
+        if os.path.isfile(im_path):
+            return im_path
+        return None
+
+    def test_image(self, tid):
+        im_path = self.test_image_path(tid)
+        if im_path is None:
+            return None
+        return mpimg.imread(im_path)
+
+    def test_ids(self):
+        files = os.listdir(os.path.join(self.data_dir, 'Test'))
+        files = (os.path.splitext(f) for f in files)
+        return [int(id) for (id, ext) in files if ext == '.jpg']
+
+    def test_counts(self, path='test.csv'):
+        try:
+            return pd.read_csv(path, index_col=0)
+        except:
+            df = pd.DataFrame([], columns=self.class_names)
+            df.index.name = 'test_id'
+            return df
+
     def display_locations(self, tid, cls=None, window_size=40):
         coords = self.training_points(tid, cls)
         if cls is None:
