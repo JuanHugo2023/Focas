@@ -5,7 +5,7 @@ from keras.layers.normalization import BatchNormalization
 from keras.layers import Activation, Lambda
 from keras.optimizers import RMSprop
 from keras.losses import mean_squared_error, poisson
-from keras.callbacks import ModelCheckpoint, TensorBoard
+from keras.callbacks import ModelCheckpoint, TensorBoard, ReduceLROnPlateau
 from keras import backend as K
 
 import numpy as np
@@ -122,10 +122,12 @@ def sample_training_image():
         # rect = Rect(1383, 1710, 4734, 5061)
         points = engine.training_points(tid, rect=rect)
         # n = (points[:,0] != 4).sum()
-        if points.shape[0] == 0:
-            if np.random.rand() > 0.01:
-                n_rejected += 1
-                continue
+
+        # if points.shape[0] == 0:
+        #     if np.random.rand() > 0.01:
+        #         n_rejected += 1
+        #         continue
+
         # print("rejected {} for lack of sea lions".format(n_rejected))
 
         density = training_density(tid, rect)
@@ -216,7 +218,8 @@ def train_top(model, batch_size, initial_epoch=0, optimizer=None,
     callbacks = [
         ModelCheckpoint(checkpoint_format),
         TensorBoard(log_dir=log_dir,
-                    histogram_freq=1)
+                    histogram_freq=1),
+        ReduceLROnPlateau(patience=1)
     ]
     model.fit_generator(generate_batches(batch_size),
                         epochs=epochs,
@@ -236,7 +239,6 @@ def batch_inputs(inputs, batch_size=64):
             batch = []
     if len(batch) > 0:
         yield np.stack(batch, axis=0)
-
 
 def predict_large_image(model, img):
     img = xception.preprocess_input(img.astype(np.float32))
@@ -303,6 +305,8 @@ def training_scores(model):
     for (i, tid) in enumerate(training_ids):
         print("tid:{} ({}/{})".format(tid, i, len(training_ids)))
         img = engine.training_mmap_image(tid)
+        mask = engine.training_mmap_mask(tid)
+        img = img*mask[:,:,None]
         density_pred = predict_large_image(model, img)
         counts_pred = density_pred.sum(axis=(0, 1))
         counts_true = engine.counts.loc[tid, engine.class_names].as_matrix()

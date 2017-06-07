@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from multiprocessing import Pool
 
+from math import ceil
+
 from point_density import point_density, downsample_sum, gauss2d
 from rect import Rect
 
@@ -219,6 +221,11 @@ class Engine(object):
             width *= subsample
         density = point_density(points, (height, width), self.point_filter[cls])
         if scale != 1:
+            dh = ceil(density.shape[0] / scale) * scale - density.shape[0]
+            dw = ceil(density.shape[1] / scale) * scale - density.shape[1]
+            density = np.pad(density, [(dh // 2, dh - dh // 2),
+                                       (dw // 2, dw - dw // 2)],
+                             'constant', constant_values=0)
             density = downsample_sum(density, scale)
         return density
 
