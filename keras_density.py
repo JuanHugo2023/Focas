@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import os
 import itertools
+import multiprocessing
 
 from math import ceil
 
@@ -264,7 +265,7 @@ def predict_large_image(model, img):
 
     inputs = (subimage(img, rect) for rect in rects)
 
-    batch_size = 64
+    batch_size = 78
     steps = ceil(len(indices) / batch_size)
     inputs = batch_inputs(inputs, batch_size)
     zero_inputs = itertools.repeat(np.zeros((inp_h, inp_w, 3)))
@@ -326,19 +327,36 @@ def training_scores(model):
         print("")
     return training_ids, diff
 
+def load_test_image(test_id):
+    global _test_image_queue
+    queue = _test_image_queue
+    img = engine.test_image(test_id)
+    queue.put((test_id, img))
+
 def predict_test_images(model, results_path):
     test_counts = engine.test_counts(results_path)
     test_ids = engine.test_ids()
-    for (i, test_id) in enumerate(test_ids):
-        if test_id in test_counts.index:
-            continue
-        print("test image {} ({}/{})".format(test_id, i, len(test_ids)))
-        img = engine.test_image(test_id)
-        density_pred = predict_large_image(model, img)
-        test_counts.loc[test_id] = density_pred.sum(axis=(0, 1))
-        test_counts.loc[test_counts.index == test_id, :].to_csv(results_path,
-                                                                mode='a',
-                                                                header=False)
+    total_tests = len(test_ids)
+    test_ids = [tid for tid in test_ids if tid not in test_counts.index]
+    test_ids.sort()
+    remaining_tests = len(test_ids)
+
+    queue = multiprocessing.Queue(10)
+    global _test_image_queue
+    _test_image_queue = queue
+
+    with multiprocessing.Pool(8) as pool:
+        pool.map_async(load_test_image, test_ids)
+        with open(results_path, 'a') as f:
+            while remaining_tests > 0:
+                test_id, img = queue.get()
+                print("test image {} ({}/{})".format(test_id, total_tests - remaining_tests, total_tests))
+                remaining_tests -= 1
+                density_pred = predict_large_image(model, img)
+                counts_pred = density_pred.sum(axis=(0, 1))
+                f.write("{},{},{},{},{},{}\n".format(
+                    test_id, counts_pred[0], counts_pred[1], counts_pred[2], counts_pred[3], counts_pred[4]))
+                f.flush()
 
 # def predict_test_images()
 

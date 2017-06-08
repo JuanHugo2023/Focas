@@ -244,7 +244,9 @@ class Engine(object):
     def test_ids(self):
         files = os.listdir(os.path.join(self.data_dir, 'Test'))
         files = (os.path.splitext(f) for f in files)
-        return [int(id) for (id, ext) in files if ext == '.jpg']
+        ids = [int(id) for (id, ext) in files if ext == '.jpg']
+        ids.sort()
+        return ids
 
     def test_counts(self, path='test.csv'):
         try:
