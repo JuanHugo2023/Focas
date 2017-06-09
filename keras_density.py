@@ -23,17 +23,68 @@ from point_density import downsample_sum
 
 engine = Engine()
 
-input_shape = (327, 327, 3)  # 327 = 32 * 10 + 7
-density_scale = 32
-# density_shape = (9, 9, 5)
-# density_shape = (9, 9, 1)
-density_shape = (7, 7, 5)
+# input_shape = (327, 327, 3)  # 327 = 32 * 10 + 7
+# density_scale = 32
+# # density_shape = (9, 9, 5)
+# # density_shape = (9, 9, 1)
+# density_shape = (7, 7, 5)
 
-def discard_outer(y):
-    discard = (11-density_shape[0]) // 2
-    return y[:,discard:-discard, discard:-discard, :]
+# def discard_outer(y):
+#     discard = (11-density_shape[0]) // 2
+#     return y[:,discard:-discard, discard:-discard, :]
 
-def build_model():
+class TrainingRun():
+    def __init__(self, loss, optimizer, batch_size, trainable, keep_prob, epochs=None, callbacks=None)
+        self.loss = loss
+        self.optimizer = optimizer
+        self.batch_size = batch_size
+        self.trainable = trainable
+        self.keep_prob = keep_prob
+        self.epochs = epochs
+        self.callbacks = callbacks
+
+class Params():
+    def __init__(self, name, model_dir, density_dim, density_border, top_layers, predict_batch_size, training_runs=None):
+        self.name = name
+        self.model_dir = model_dir
+        self.density_dim = density_dim
+        self.density_border = density_border
+        self.top_layers = top_layers
+        self.cell_size = 32  # determined by base trained net
+        self.border = 19  # determined by base trained net
+        self.num_classes = 5  # determined by problem
+        self.density_shape = (self.density_dim,
+                              self.density_dim,
+                              self.num_classes)
+        self.input_shape = (self.density_dim + 2 * self.density_border) * self.cell_size + 2 * self.BORDER
+        self.predict_batch_size = predict_batch_size
+        self.training_runs = training_runs
+        self.training_run_index = 0
+
+    def training_run():
+        return self.training_runs[self.training_run_index]
+
+    def weights_path(run):
+
+
+
+def conv_layer(filters, kernel_size, padding='same', name=None, normalization=True, activation=True):
+    def _fn(x):
+        x = Conv2D(filters, kernel_size,
+                   padding=padding,
+                   use_bias=False,
+                   name=name)(x)
+        if normalization:
+            x = BatchNormalization(name=name+'_bn')(x)
+        if activation:
+            x = Activation('relu', name=name+'_act')(x)
+        return x
+
+def final_conv_layer(filters, kernel_size, padding='same', name=None):
+    return conv_layer(filters, kerenl_size, padding=padding, name=name, normalization=False, activation=False)
+
+def build_model(params):
+
     # pre-trained model
     base_model = xception.Xception(include_top=False,
                                    weights='imagenet',
@@ -41,43 +92,36 @@ def build_model():
                                    input_shape=input_shape,
                                    pooling=None)
 
-    # output from pre-trained model. shape=(?,11,11,2048)
-    x = base_model.output
-
-    # add convolution layer
-    x = Conv2D(1024, (3, 3), padding='same', use_bias=False,
-                name='block15_conv1024')(x)
-    x = BatchNormalization(name='block15_conv1024_bn')(x)
-    x = Activation('relu', name='block15_conv1024_act')(x)
-
-    # ignore the cells closest to the border, shape=(?,9,9,2048)
-    x = Lambda(discard_outer)(x)
-    # x = Lambda(lambda y: y[:, discard:-discard, discard:-discard, :])(x)
-
-    # add hidden layer
-    x = Conv2D(256, (1, 1), padding='same', use_bias=False,
-                name='block15_conv256')(x)
-    x = BatchNormalization(name='block15_conv256_bn')(x)
-    x = Activation('relu', name='block15_conv256_act')(x)
-
-    # final convolution, down to 5 channels (one per kind of sea lion)
-    x = Conv2D(density_shape[2], (1, 1), padding='same', use_bias=False,
-               name='block15_conv5')(x)
-    # softplus ensures our count is not negative, while keeping gradient information 
-    x = Activation('softplus', name='block15_conv5_act')(x)
-
-    # disable training for the old layers
+    # disable training for the pre-trained layers
     for layer in base_model.layers:
         layer.trainable = False
 
+    # output from pre-trained model. shape=(?,11,11,2048)
+    x = base_model.output
+
+    for layer in top_layers:
+        x = layer(x)
+
+    # final convolution, down to 5 channels (one per kind of sea lion)
+    # x = Conv2D(params.num_classes, (1, 1), padding='same', use_bias=False,
+    #            name='block15_conv5')(x)
+    # softplus ensures our count is not negative, while keeping gradient information 
+    # x = Activation('softplus', name='block15_conv5_act')(x)
+
+    d = x.shape[1] - params.density_dim
+    assert d >= 0, "output is smaller than specified density_dim"
+    if d > 0:
+        x = x[:, d:-d, d:-d]
+
     model = Model(inputs=base_model.input, outputs=x)
-    model
     return model
+
+# model = build_model(7, 1, [conv_layer(1024, (3,3)), conv_layer(256, (1,1))])
 
 
 def random_rect(img_shape, rect_shape):
     img_h, img_w = img_shape[:2]
-    rect_h, rect_w = input_shape[:2]
+    rect_h, rect_w = rect_shape[:2]
     r = np.random.randint(img_h)
     c = np.random.randint(img_w)
     r0 = r - rect_h // 2
@@ -87,78 +131,75 @@ def random_rect(img_shape, rect_shape):
     return Rect(r0, r1, c0, c1)
 
 
-def training_density(tid, rect):
+def training_density(tid, rect, params):
     # Final layer convolutional cells are centered at $(32i+3,32j+3)$, for $i,j\geq 0$.
     # So we want the density of a 32x32 square centered at each of these points.
     # These 32x32 pixel squares go outside the input region of the image when $i=0$ or $j=0$
 
     # number of rows/columns of density not part of an output cell
-    discard = 3 + 16 + 32 * (9-density_shape[0]) // 2
+    discard = params.density_border * params.cell_size + params.border
     rect = Rect(rect.row_min + discard,
                 rect.row_max - discard,
                 rect.col_min + discard,
                 rect.col_max - discard)
-    # print(rect)
-    # print(rect.width(), rect.height())
     density = engine.training_density(tid, rect=rect, subsample=2)
     density = density[1:-1, 1:-1, :]
-    # print(density.shape)
     density = downsample_sum(density, 64)
 
-    # drop the pup channel, and some the others,
-    # giving total non-pup sea lion density
-    # density = np.sum(density[:, :, :4], axis=2)[:,:,None]
-
-    assert density.shape == density_shape
+    assert density.shape == (params.density_dim, params.density_dim, params.num_classes)
     return density
 
+def reject_empty(p_empty):
+    def fn(tid, rect):
+        points = engine.training_points(tid, rect=rect)
+        if points.shape[0] == 0:
+            return p_empty
+        else:
+            return 1.0
+    return fn
 
-def sample_training_image():
+def sample_orientation():
+    bits = [np.random.rand() > 0.5 for i in range(3)]
+
+    def apply_orientation(img):
+        for axis in range(2):
+            if bits[axis]:
+                img = np.flip(img, axis)
+        if bits[2]:
+            # transpose
+            img = np.swapaxes(img, 0, 1)
+        return img
+
+    return apply_orientation
+
+def sample_training_image(params):
     n_rejected = 0
     while True:
         tid = np.random.randint(len(engine.training_ids()))
-        # tid = 0
         tid = engine.training_ids()[tid]
         img = engine.training_mmap_image(tid)
-        rect = random_rect(img.shape, input_shape)
-        # rect = Rect(1383, 1710, 4734, 5061)
-        points = engine.training_points(tid, rect=rect)
-        # n = (points[:,0] != 4).sum()
+        rect = random_rect(img.shape, (params.input_dim, params.input_dim))
+        if np.random.rand() > params.keep_prob(tid, rect):
+            continue
 
-        # if points.shape[0] == 0:
-        #     if np.random.rand() > 0.01:
-        #         n_rejected += 1
-        #         continue
+        density = training_density(tid, rect, params)
 
-        # print("rejected {} for lack of sea lions".format(n_rejected))
-
-        density = training_density(tid, rect)
-
-        # rect = Rect(1657,1984,2311,2638)
-        # print(tid, (rect.row_min+rect.row_max)//2, (rect.col_min+rect.col_max)//2)
-        # print(tid,rect)
         img = subimage(img, rect)
         mask = engine.training_mmap_mask(tid)
         mask = mask[:,:,None]
         mask = subimage(mask, rect)
         img *= mask
         img = xception.preprocess_input(img.astype(np.float32))
-        if np.random.rand() > 0.5:
-            # transpose
-            img = np.swapaxes(img, 0, 1)
-            density = np.swapaxes(density, 0, 1)
-        for axis in [0, 1]:
-            if np.random.rand() > 0.5:
-                # flip direction along axis
-                img = np.flip(img, axis)
-                density = np.flip(density, axis)
+        orient = sample_orientation()
+        img = orient(img)
+        density = orient(density)
         return img, density
 
 
-def generate_batches(batch_size):
+def generate_batches(params):
     while True:
-        images, densities = zip(*(sample_training_image()
-                                  for i in range(batch_size)))
+        images, densities = zip(*(sample_training_image(params)
+                                  for i in range(params.batch_size)))
         images = np.stack(images)
         densities = np.stack(densities)
         yield (images, densities)
@@ -173,9 +214,6 @@ def count_error(density_true, density_pred):
     diff = K.mean(diff, axis=1)
     print("diff mean", diff.shape)
     return K.max(diff, axis=0)
-
-    # rse = K.sqrt(K.sum(diff ** 2, 1))
-    # return K.max(rse)
 
 
 def area_loss(density_true, density_pred):
@@ -199,7 +237,6 @@ def area_loss(density_true, density_pred):
     loss = K.mean(loss, axis=1)
     print("loss",loss.shape)
     return loss
-
 
 
 def train_top(model, batch_size, initial_epoch=0, optimizer=None,
@@ -341,11 +378,11 @@ def predict_test_images(model, results_path):
     test_ids.sort()
     remaining_tests = len(test_ids)
 
-    queue = multiprocessing.Queue(10)
+    queue = multiprocessing.Queue(2)
     global _test_image_queue
     _test_image_queue = queue
 
-    with multiprocessing.Pool(8) as pool:
+    with multiprocessing.Pool(2) as pool:
         pool.map_async(load_test_image, test_ids)
         with open(results_path, 'a') as f:
             while remaining_tests > 0:
@@ -358,17 +395,36 @@ def predict_test_images(model, results_path):
                     test_id, counts_pred[0], counts_pred[1], counts_pred[2], counts_pred[3], counts_pred[4]))
                 f.flush()
 
-# def predict_test_images()
-
-model_objects = {
-    "count_error": count_error,
-    "discard_outer": discard_outer,
-    "density_shape": density_shape,
-    "area_loss": area_loss
-}
+def params_alpha():
+    # training score 14.?
+    return Params(name='alpha',
+                  model_dir='model_data/'
+                  density_dim=7,
+                  density_border=1,
+                  top_layers=[
+                      conv_layer(1024, (3,3), "block15_conv1024"),
+                      conv_layer(256, (1,1), "block15_conv256"),
+                      final_conv_layer(5, (1, 1), "block15_conv5"),
+                      Activation('softplus', name='block15_conv5_act')],
+                  predict_batch_size=64,
+                  training_runs=[
+                      TrainingRun(loss = area_loss,
+                                  optimizer = RMSprop(1e-3),
+                                  batch_size = 64,
+                                  trainable = lambda layer: str.startswith(layer.name, "block15"),
+                                  keep_prob = reject_empty(0.05),
+                                  callbacks=[EarlyStopping(?)]),
+                      TrainingRun(loss = area_loss,
+                                  optimizer = RMSprop(1e-5),
+                                  batch_size = 64,
+                                  trainable = lambda layer: (str.startswith(layer.name, "block14") ||
+                                                             str.startswith(layer.name, "block15")),
+                                  keep_prob = reject_empty(1.0),
+                                  callbacks=[ReduceLROnPlateau(patience=0), EarlyStopping(?)])
+                  ])
 
 if __name__ == '__main__':
-    model = build_model()
-    model.load_weights('keras_density.hdf5')
+    model = build_model(params_alpha())
+    # model.load_weights('keras_density.hdf5')
     # model = load_model('keras_density.hdf5')
-    train_top(model, 128)
+    # train_top(model, 128)
