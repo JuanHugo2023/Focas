@@ -238,7 +238,6 @@ def do_training_run(model):
     subimages_per_image = image_size / input_size
     subimages_per_image /= 20  # about 1/20 squares have sea lions
     steps_per_epoch = int(num_images * subimages_per_image / batch_size)
-    steps_per_epoch = 5
 
     _checkpoint_format = checkpoint_format.format(model_dir=params.model_dir,
                                                   run=training_run)
