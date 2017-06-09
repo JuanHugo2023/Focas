@@ -11,6 +11,22 @@ from math import ceil
 from point_density import point_density, downsample_sum, gauss2d
 from rect import Rect
 
+_engine = None
+
+
+def get_engine():
+    """Get a shared, global instance of engine.
+    """
+    return _engine
+
+
+def init_engine(data_dir='./data',
+                padded_shape=None,
+                sigma=(40, 30, 30, 30, 10)):
+    """Initialize a shared, global instance of engine.
+    """
+    global _engine
+    _engine = Engine(data_dir, padded_shape, sigma)
 
 class Engine(object):
     def __init__(self,
@@ -19,7 +35,19 @@ class Engine(object):
                  sigma=(40, 30, 30, 30, 10)):
         self.data_dir = data_dir
         self.points = pd.read_csv(self.data_path('coords-clean.csv'))
-        self.counts = pd.read_csv(self.data_path('train-clean.csv'), index_col=0)
+        self.counts = self.load_counts(self.data_path('train-clean.csv'))
+        try:
+            self.validation_ids = pd.read_csv(self.data_path('validation.csv')).as_matrix()[:,0]
+        except:
+            ids = np.array(self.counts.index).copy()
+            np.random.shuffle(ids)
+            self.validation_ids = ids[:int(0.1 * len(ids))]
+            self.validation_ids.sort()
+            pd.Series(self.validation_ids).to_csv(self.data_path('validation.csv'), index=False)
+            print('WARNING: no validation set found.')
+        self.training_ids = np.array(list(set(self.counts.index) - set(self.validation_ids)))
+        self.training_ids.sort()
+
         self.class_names = ['adult_males',     # 0
                             'subadult_males',  # 1
                             'adult_females',   # 2
@@ -39,6 +67,9 @@ class Engine(object):
     def data_path(self, path):
         return '{}/{}'.format(self.data_dir, path)
 
+    def load_counts(self, path):
+        return pd.read_csv(path, index_col=0)
+
     def pad_image(self, img):
         if self.padded_shape is None:
             return img
@@ -57,7 +88,7 @@ class Engine(object):
 
     def create_npy_images(self, tids=None):
         if tids is None:
-            tids = self.training_ids()
+            tids = self.training_ids
         for tid in tids:
             img = self.training_image(tid)
             path = self.training_image_path(tid)
@@ -160,9 +191,6 @@ class Engine(object):
             with Image.open(img_path) as img:
                 width, height = img.size
                 return height, width
-
-    def training_ids(self):
-        return np.array(self.counts.index)
 
     def training_padded_rect(self, tid):
         h, w = self.training_image_shape(tid)
