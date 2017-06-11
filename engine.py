@@ -112,6 +112,12 @@ class Engine(object):
             np.save(npy_path, mask)
         return np.load(npy_path, mmap_mode='r')
 
+    def training_masked_image(self, tid):
+        img = self.training_mmap_image(tid)
+        mask = self.training_mmap_mask(tid)
+        mask = mask[:,:,None]
+        return img * mask
+
     # def training_mmap_density(self, tid, subsample=1):
     #     scale = 4
     #     im_path = self.training_image_path(tid)

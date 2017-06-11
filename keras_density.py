@@ -80,7 +80,7 @@ def find_training_status():
         epoch += 1
 
 
-def build_model():
+def build_model(weights_path=None):
     """Build the Keras model
     """
     # pre-trained model
@@ -106,13 +106,14 @@ def build_model():
         x = Lambda(lambda y: y[:, d:-d, d:-d])(x)
 
     model = Model(inputs=base_model.input, outputs=x)
-    if epoch <= 0:
-        path = final_weights_path(training_run-1)
-    else:
-        path = checkpoint_path(training_run, epoch-1)
-    if os.path.isfile(path):
-        print("loading weights from {}".format(path))
-        model.load_weights(path)
+    if weights_path is None:
+        if epoch <= 0:
+            weights_path = final_weights_path(training_run-1)
+        else:
+            weights_path = checkpoint_path(training_run, epoch-1)
+    if os.path.isfile(weights_path):
+        print("loading weights from {}".format(weights_path))
+        model.load_weights(weights_path)
     else:
         print("no weights file found")
     return model
@@ -356,7 +357,6 @@ class AvgStopWatch():
             self.running_avg = 0.9 * self.running_avg + 0.1 * dt
         return self.running_avg
 
-
 def generate_count_predictions(model, tids, get_img,
                                pickle_safe=True, results_path=None):
     """Predict the counts for a sequence of images.
@@ -373,15 +373,20 @@ def generate_count_predictions(model, tids, get_img,
     """
     num_images = len(tids)
 
-    if results_path is not None and os.path.isfile(results_path):
-        saved_counts = engine.load_counts(results_path)
-        tids = [tid for tid in tids
-                if tid not in saved_counts.index]
-        tids.sort()
+    if results_path is not None:
+        if os.path.isfile(results_path):
+            saved_counts = engine.load_counts(results_path)
+            tids = [tid for tid in tids
+                    if tid not in saved_counts.index]
+        else:
+            with open(results_path, 'a') as f:
+                f.write(','.join(['train_id'] + engine.class_names))
+                f.write('\n')
 
     remaining_images = len(tids)
 
     generator = ((tid, get_img(tid)) for tid in tids)
+    generator = itertools.chain(generator, itertools.repeat(None))
     enqueuer = GeneratorEnqueuer(generator, pickle_safe)
     enqueuer.start(max_q_size=2)
     wait_time = 0.01
@@ -431,22 +436,20 @@ def validate(args):
     """Entry point for validation"""
     model = args.model
 
-    validation_ids = engine.validation_ids
+    if args.holdout:
+        validation_ids = engine.validation_ids
+    else:
+        validation_ids = engine.training_ids
     diff = np.zeros((len(validation_ids), 5))
     diff_ratio = np.zeros((len(validation_ids), 5))
 
     predictions = generate_count_predictions(model,
                                              validation_ids,
-                                             engine.training_image,
+                                             engine.training_masked_image,
                                              pickle_safe=True,
                                              results_path=args.results_path)
 
-    for i, (tid, counts) in enumerate(predictions):
-        img = engine.training_mmap_image(tid)
-        mask = engine.training_mmap_mask(tid)
-        img = img*mask[:,:,None]
-        density_pred = predict_large_image(model, img)
-        counts_pred = density_pred.sum(axis=(0, 1))
+    for i, (tid, counts_pred) in enumerate(predictions):
         counts_true = engine.counts.loc[tid, engine.class_names].as_matrix()
         diff[i, :] = counts_pred - counts_true
         avg_so_far = np.mean(diff[:i+1, :] ** 2, axis=0)
@@ -467,41 +470,27 @@ def test(args):
     """Entry point for predicting the test images"""
     model = args.model
 
+    if args.ids_path is not None and os.path.isfile(args.ids_path):
+        test_ids = pd.read_csv(args.ids_path, header=None).as_matrix()[:, 0]
+    else:
+        test_ids = engine.test_ids()
+
+
     predictions = generate_count_predictions(model,
-                                             engine.test_ids(),
+                                             test_ids,
                                              engine.test_image,
                                              pickle_safe=True,
                                              results_path=args.results_path)
     for x in predictions:
         pass
 
-
-def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('model')
-
-    subparsers = parser.add_subparsers(help='sub-command help',
-                                       dest='command')
-    parser_train = subparsers.add_parser('train', help='train help')
-    parser_train.set_defaults(func=train)
-
-    parser_valid = subparsers.add_parser('validate', help='valid help')
-    parser_valid.add_argument('--output', '-o', dest='results_path', required=True)
-    parser_valid.set_defaults(func=validate)
-
-    parser_test = subparsers.add_parser('test', help='test help')
-    parser_test.add_argument('--output', '-o', dest='results_path', required=True)
-    parser_test.set_defaults(func=test)
-
-    args = parser.parse_args()
-
+def init(model_name):
     global engine
     engine_lib.init_engine()
     engine = engine_lib.get_engine()
 
     global params
-    params_mod = importlib.import_module('density_'+args.model)
+    params_mod = importlib.import_module('density_'+model_name)
     params = params_mod.params
 
     try:
@@ -511,7 +500,33 @@ def main():
 
     find_training_status()
 
-    model = build_model()
+def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('model')
+    parser.add_argument('--weights', dest='weights_path')
+
+    subparsers = parser.add_subparsers(help='sub-command help',
+                                       dest='command')
+    parser_train = subparsers.add_parser('train', help='train help')
+    parser_train.set_defaults(func=train)
+
+    parser_valid = subparsers.add_parser('validate', help='valid help')
+    parser_valid.add_argument('--output', '-o', dest='results_path', required=True)
+    parser_valid.add_argument('--no-holdout', action='store_const',
+                              dest='holdout', const=False, default=True)
+    parser_valid.set_defaults(func=validate)
+
+    parser_test = subparsers.add_parser('test', help='test help')
+    parser_test.add_argument('--output', '-o', dest='results_path', required=True)
+    parser_test.add_argument('--ids', dest='ids_path')
+    parser_test.set_defaults(func=test)
+
+    args = parser.parse_args()
+
+    init(args.model)
+
+    model = build_model(args.weights_path)
 
     args.model = model
     args.func(args)

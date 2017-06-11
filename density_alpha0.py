@@ -3,11 +3,11 @@
 from density_params import *
 
 
-class Alpha(Params):
-    model_name = 'alpha'
+class Alpha0(Params):
+    model_name = 'alpha0'
 
     # where to store the weights and logs
-    model_dir = 'model_data/alpha/'
+    model_dir = 'model_data/alpha0/'
 
     # the number of rows/cols of density cells output by the NN
     density_dim = 7
@@ -38,8 +38,8 @@ class Alpha(Params):
                             optimizer=RMSprop(1e-3),
                             batch_size=64,
                             trainable=lambda layer: str.startswith(layer.name, "block15"),
-                            keep_prob=reject_empty(0.05),
-                            callbacks=[EarlyStopping('loss', 1e-5, patience=2)],
+                            keep_prob=reject_empty(0.01),
+                            callbacks=[EarlyStopping('loss', patience=10)],
                             metrics=[count_error]),
                 TrainingRun(loss=self.area_loss,
                             optimizer=RMSprop(1e-5),
@@ -47,9 +47,8 @@ class Alpha(Params):
                             trainable=lambda layer: (str.startswith(layer.name, "block14") or
                                                         str.startswith(layer.name, "block15")),
                             keep_prob=reject_empty(1.0),
-                            callbacks=[ReduceLROnPlateau('loss', patience=2),
-                                        EarlyStopping('loss', 1e-8, patience=6)],
+                            callbacks=[EarlyStopping('loss', patience=10)],
                             metrics=[count_error])]
 
 
-params = Alpha()
+params = Alpha0()
